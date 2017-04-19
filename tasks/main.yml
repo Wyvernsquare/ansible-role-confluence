@@ -1,0 +1,69 @@
+---
+- hosts: confluence
+  user: vagrant
+  become: yes
+  vars:
+    dbname: confluence
+    dbuser: confluenceuser
+    confl_bin: atlassian-confluence-6.1.2-x64.bin
+    confl_url: http://www.atlassian.com/software/confluence/downloads/binary/{{confl_bin}}
+  vars_files:
+   - postgres_pass.yml
+  
+  tasks: 
+   - name: update yum cache
+     yum: name=* update_cache=yes
+
+   - name: ensure postgres installed
+     package: name={{item}} state=latest
+     with_items:
+      - postgresql.x86_64
+      - postgresql-server.x86_64
+      - postgresql-contrib.x86_64
+      - postgresql-devel.x86_64
+      - python-psycopg2.x86_64
+
+   - user: 
+       name: postgres
+       group: wheel
+
+   - name: ensure postgres initdb
+     shell: postgresql-setup initdb
+     ignore_errors: yes
+
+   - name: start postgres
+     shell: service postgresql start
+
+   - name: enable postgresql on boot
+     shell: systemctl enable postgresql
+   
+   - name: ensure passwordless postgres user
+     copy: src=templates/sudoers dest=/etc/sudoers
+  
+   - name: ensure database created   
+     postgresql_db: name={{dbname}} encoding='UTF-8'
+     become_user: postgres
+
+   - name: ensure user has access to database
+     postgresql_user: db={{dbname}} name={{dbuser}} password={{dbpass}} priv=ALL
+     become_user: postgres
+     
+   - name: ensure user does not have unnecessary privilege
+     postgresql_user: name={{dbuser}} role_attr_flags=NOSUPERUSER,NOCREATEDB
+     become_user: postgres
+
+   - name: download confluence
+     get_url: url={{confl_url}} dest=/var/tmp/{{confl_bin}} mode=0755
+
+   - name: copy down response.varfile
+     copy: src=templates/response.varfile dest=/var/tmp/response.varfile 
+
+   - name: install confluence
+     command: /var/tmp/{{confl_bin}} -q -varfile /var/tmp/response.varfile
+       creates=/opt/atlassian/confluence/install.reg
+
+   - name: template init.d confluence file to server
+     template: src=confluence dest=/etc/init.d/confluence mode=755 force=yes
+
+   - name: run script to allow confluence to auto start on reboot
+     script: templates/confluence_script.sh

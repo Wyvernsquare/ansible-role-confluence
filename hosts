@@ -1,0 +1,2 @@
+[confluence]
+172.31.16.100 ansible_ssh_user=vagrant ansible_ssh_private_key_file=virtualbox/machines/server1/virtualbox/private_key
